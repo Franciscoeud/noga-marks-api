@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: noga-api
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        value: https://fnycwhmrlbwcicdqlhnw.supabase.co
+      - key: SUPABASE_KEY
+        sync: false   # para definirlo en dashboard como secret
+      - key: WOO_SECRET
+        sync: false
+      - key: WOO_API_URL
+        value: https://nogamarks.com
+      - key: TWILIO_ACCOUNT_SID  
+        value: false
+      - key: TWILIO_AUTH_TOKEN  
+        value: false
+      - key: TWILIO_WHATSAPP_FROM
+        value: false
+      - key: TWILIO_WHATSAPP_TO
+        value: false
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: 587   
+      - key: EMAIL_USER
+        value: false
+      - key: EMAIL_PASS
+        value: false
+      - key: EMAIL_FROM
+        value: Noga Marks <hola@nogamarks.com>
+      # agrega Twilio, SMTP, tokens IA, etc.
+
+  # Opcional: cronjob para tareas recurrentes
+  - type: cron
+    name: noga-workers
+    env: python
+    schedule: "*/30 * * * *"  # cada 30 minutos
+    buildCommand: pip install -r requirements.txt
+    startCommand: python workers/run.py
+    envVars:
+      - key: SUPABASE_URL
+        value: https://fnycwhmrlbwcicdqlhnw.supabase.co
+      - key: SUPABASE_KEY
+        sync: false # para definirlo en dashboard como secret
+      # etc.

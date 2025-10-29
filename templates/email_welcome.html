@@ -1,0 +1,101 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        background-color: #f7f8fa;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        color: #333333;
+      }
+      .container {
+        max-width: 600px;
+        margin: 30px auto;
+        background: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+      }
+      .header {
+        background-color: #1e1e2f;
+        color: white;
+        text-align: center;
+        padding: 30px 20px;
+      }
+      .header img {
+        width: 120px;
+        margin-bottom: 15px;
+      }
+      .content {
+        padding: 30px;
+      }
+      h1 {
+        color: #1e1e2f;
+        font-size: 22px;
+        margin-bottom: 15px;
+      }
+      p {
+        line-height: 1.6;
+        margin: 10px 0;
+      }
+      .cta {
+        display: inline-block;
+        background-color: #4b68ff;
+        color: white !important;
+        text-decoration: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        margin-top: 20px;
+        font-weight: bold;
+      }
+      .cta:hover {
+        background-color: #3655f0;
+      }
+      .footer {
+        text-align: center;
+        padding: 20px;
+        font-size: 13px;
+        color: #888888;
+      }
+      .social-icons img {
+        width: 28px;
+        margin: 0 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img src="https://i.imgur.com/hZq1Q1O.png" alt="Noga Marks Logo" />
+        <h2>Bienvenido(a) a Noga Marks</h2>
+      </div>
+      <div class="content">
+        <h1>Hola {{name}}, ¡gracias por contactarnos! 💫</h1>
+        <p>
+          Hemos recibido tu mensaje a través de <b>{{source}}</b> y nos alegra mucho que
+          estés interesado(a) en nuestros productos.
+        </p>
+        <p>
+          Pronto uno de nuestros asesores se comunicará contigo para ayudarte a elegir
+          la mejor opción según tus necesidades.
+        </p>
+        <p>
+          Mientras tanto, te invitamos a conocer más sobre Noga Marks visitando nuestra
+          web:
+        </p>
+        <a href="https://nogamarks.com" class="cta">Visitar nuestra web</a>
+      </div>
+      <div class="footer">
+        <p>Síguenos en nuestras redes:</p>
+        <div class="social-icons">
+          <a href="https://www.instagram.com/nogamarks"><img src="https://i.imgur.com/x6zWWQJ.png" alt="Instagram" /></a>
+          <a href="https://www.tiktok.com/@nogamarks"><img src="https://i.imgur.com/fP9l3hT.png" alt="TikTok" /></a>
+          <a href="https://www.facebook.com/nogamarks"><img src="https://i.imgur.com/V2f1iMZ.png" alt="Facebook" /></a>
+        </div>
+        <p>© 2025 Noga Marks. Todos los derechos reservados.</p>
+      </div>
+    </div>
+  </body>
+</html>
