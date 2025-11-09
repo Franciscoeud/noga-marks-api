@@ -13,23 +13,29 @@ export function Layout() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-emerald-400">
-              Noga Marks
-            </p>
-            <h1 className="text-lg font-semibold text-slate-100">
-              Centro de Distribución
-            </h1>
+          <div className="flex items-center gap-3">
+            <img src="/aurea-logo.svg" alt="Aurea" className="h-8 w-auto" />
+            <div>
+              <p className="text-xs uppercase tracking-widest text-emerald-400">
+                Operations
+              </p>
+              <h1 className="text-lg font-semibold text-slate-100">
+                Centro de Distribucion
+              </h1>
+            </div>
           </div>
           <nav className="flex items-center gap-2">
             <NavLink to="/purchase-orders" className={navLinkClass}>
-              Órdenes de compra
+              Ordenes de compra
             </NavLink>
             <NavLink to="/inventory" className={navLinkClass}>
               Inventario
             </NavLink>
             <NavLink to="/analytics" className={navLinkClass}>
               Analytics
+            </NavLink>
+            <NavLink to="/" className={navLinkClass}>
+              Ver tienda
             </NavLink>
           </nav>
         </div>
