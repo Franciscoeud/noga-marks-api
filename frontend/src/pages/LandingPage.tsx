@@ -801,23 +801,6 @@ const colorStories: Array<{
   },
 ];
 
-const storyFeatures = [
-  {
-    eyebrow: "Wellness",
-    title: "Reset Your Routine",
-    copy: "Mindful movement and guided breathwork to anchor every morning.",
-    image:
-      "https://images.unsplash.com/photo-1556817411-31ae72fa3ea0?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    eyebrow: "Community",
-    title: "Moves That Matter",
-    copy: "Discover the ambassadors redefining modern studio culture.",
-    image:
-      "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?auto=format&fit=crop&w=800&q=80",
-  },
-];
-
 const footerColumns = [
   {
     heading: "Customer Service",
