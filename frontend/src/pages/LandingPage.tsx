@@ -205,7 +205,7 @@ const finishingTouches: Array<{
       "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=640&q=80",
     hoverImage:
       "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=640&q=80",
-    href: "https://nogamarks.com/shop?add-to-cart=63",
+    href: "https://nogamarks.com/product/leggings-deportivos/",
   },
   {
     title: "Unisex Half-Crew Throwback Sock",
