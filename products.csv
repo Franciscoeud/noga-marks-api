@@ -1,0 +1,7 @@
+sku,name,category,price,cost,status
+COL-QUEEN,Colchón Memory Queen,Colchones,1499,850,active
+COL-KING,Colchón Memory King,Colchones,1899,1050,active
+SAB-400Q,Sábanas 400h Queen,Ropa de cama,329,140,active
+SAB-400K,Sábanas 400h King,Ropa de cama,359,150,active
+ALM-MEM,Almohada Memory Foam,Almohadas,169,70,active
+PROT-MAT,Protector de colchón,Ropa de cama,199,80,active

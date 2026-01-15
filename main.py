@@ -1,10 +1,10 @@
 # main.py — Noga Marks API (versión ecommerce estable sin Lead Hunter)
-import os, hmac, hashlib, base64, json, traceback, smtplib, secrets, requests
+import os, hmac, hashlib, base64, json, traceback, smtplib, secrets, requests, csv, io
 from enum import Enum
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, Optional, List, Tuple
-from uuid import UUID
-from fastapi import FastAPI, Request, HTTPException
+from uuid import UUID, uuid4
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -257,6 +257,64 @@ def parse_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def clean_str(value: Any) -> str:
+    """Convierte a str y limpia espacios."""
+    return str(value).strip() if value is not None else ""
+
+
+def add_error(errors: List[Dict[str, Any]], row_number: int, field: str, message: str):
+    errors.append({"row": row_number, "field": field, "error": message})
+
+
+def parse_int_field(value: Any, field: str, row_number: int, errors: List[Dict[str, Any]]) -> Optional[int]:
+    text = clean_str(value)
+    if text == "":
+        add_error(errors, row_number, field, "Valor requerido")
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        add_error(errors, row_number, field, "Debe ser un número entero")
+        return None
+
+
+def parse_float_field(value: Any, field: str, row_number: int, errors: List[Dict[str, Any]], allow_empty: bool = True) -> Optional[float]:
+    text = clean_str(value)
+    if text == "":
+        if allow_empty:
+            return None
+        add_error(errors, row_number, field, "Valor requerido")
+        return None
+    try:
+        return float(text.replace(",", ""))
+    except ValueError:
+        add_error(errors, row_number, field, "Debe ser un número")
+        return None
+
+
+async def read_csv_upload(file: UploadFile, required_columns: List[str]) -> List[Dict[str, str]]:
+    """Lee un CSV subido y valida que tenga encabezados requeridos."""
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {exc}") from exc
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="El CSV no tiene encabezados")
+
+    missing = [col for col in required_columns if col not in reader.fieldnames]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Faltan columnas requeridas: {', '.join(missing)}")
+
+    rows = list(reader)
+    if not rows:
+        raise HTTPException(status_code=400, detail="El CSV está vacío")
+
+    return rows
+
+
 def find_inventory_product(woo_product_id: Optional[int], woo_variant_id: Optional[int]) -> Optional[Dict[str, Any]]:
     """Busca el producto en inventario en base al ID de WooCommerce."""
     if woo_variant_id:
@@ -272,9 +330,323 @@ def find_inventory_product(woo_product_id: Optional[int], woo_variant_id: Option
             "No se pudo buscar producto por ID de WooCommerce"
         )
         if data:
-            return data[0]
+        return data[0]
     return None
 
+
+# === Importaciones CSV (Fase 2) ===
+def fetch_id_map(table: str, key_column: str, id_column: str, values: List[str], error_detail: str) -> Dict[str, str]:
+    """Obtiene un mapa clave->id en Supabase para un set de valores."""
+    unique_values = list({v for v in values if v})
+    if not unique_values:
+        return {}
+
+    results: Dict[str, str] = {}
+    chunk_size = 500
+    for i in range(0, len(unique_values), chunk_size):
+        batch = unique_values[i : i + chunk_size]
+        data = supabase_run(
+            supabase.table(table).select(f"{id_column}, {key_column}").in_(key_column, batch),
+            error_detail,
+        )
+        for item in data or []:
+            results[item[key_column]] = item[id_column]
+    return results
+
+
+def insert_import_batch(kind: str) -> str:
+    batch_id = str(uuid4())
+    supabase_run(
+        supabase.table("import_batches").insert({"id": batch_id, "kind": kind, "status": "pending"}),
+        "No se pudo registrar el lote de importación",
+    )
+    return batch_id
+
+
+def complete_import_batch(batch_id: str, status: str = "completed", error_summary: Optional[Dict[str, Any]] = None):
+    payload: Dict[str, Any] = {"status": status}
+    if error_summary is not None:
+        payload["error_summary"] = error_summary
+    supabase_run(
+        supabase.table("import_batches").update(payload).eq("id", batch_id),
+        "No se pudo actualizar el estado del lote de importación",
+    )
+
+
+@app.post("/imports/products", status_code=201)
+async def import_products_csv(file: UploadFile = File(...)):
+    """Importa catálogo de productos desde CSV. Aborta si hay errores."""
+    rows = await read_csv_upload(file, ["sku", "name", "category", "price", "cost", "status"])
+    errors: List[Dict[str, Any]] = []
+    products: List[Dict[str, Any]] = []
+    raw_rows: List[Dict[str, Any]] = []
+
+    for idx, row in enumerate(rows):
+        row_number = idx + 2  # +1 por header, +1 por base 1
+        row_errors: List[Dict[str, Any]] = []
+
+        sku = clean_str(row.get("sku"))
+        name = clean_str(row.get("name"))
+        category = clean_str(row.get("category"))
+        status = clean_str(row.get("status")) or "active"
+        price = parse_float_field(row.get("price"), "price", row_number, row_errors, allow_empty=True)
+        cost = parse_float_field(row.get("cost"), "cost", row_number, row_errors, allow_empty=True)
+
+        if not sku:
+            add_error(row_errors, row_number, "sku", "SKU requerido")
+        if not name:
+            add_error(row_errors, row_number, "name", "Nombre requerido")
+
+        raw_rows.append(
+            {
+                "batch_id": None,  # se asignará al guardar
+                "row_number": row_number,
+                "sku": sku,
+                "name": name,
+                "category": category,
+                "price": price,
+                "cost": cost,
+                "status": status,
+                "errors": "; ".join(err["error"] for err in row_errors) if row_errors else None,
+            }
+        )
+
+        if row_errors:
+            errors.extend(row_errors)
+            continue
+
+        products.append(
+            {
+                "sku": sku,
+                "name": name,
+                "category": category or None,
+                "price": price,
+                "cost": cost,
+                "status": status or "active",
+            }
+        )
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"message": "Errores de validación", "errors": errors})
+
+    batch_id = insert_import_batch("products")
+    # guardar raw con batch asignado (solo si hay filas)
+    if raw_rows:
+        for r in raw_rows:
+            r["batch_id"] = batch_id
+        supabase_run(
+            supabase.table("raw_products").insert(raw_rows),
+            "No se pudo registrar las filas de productos",
+        )
+
+    supabase_run(
+        supabase.table("products").upsert(products, on_conflict="sku"),
+        "No se pudo importar productos",
+    )
+    complete_import_batch(batch_id, status="completed")
+
+    return {"imported": len(products), "errors": []}
+
+
+@app.post("/imports/sales", status_code=201)
+async def import_sales_csv(file: UploadFile = File(...)):
+    """Importa ventas históricas desde CSV. Aborta si hay errores."""
+    rows = await read_csv_upload(file, ["sku", "store_code", "sale_date", "units_sold", "revenue"])
+    errors: List[Dict[str, Any]] = []
+    sales: List[Dict[str, Any]] = []
+    raw_rows: List[Dict[str, Any]] = []
+
+    # Prefetch mappings
+    skus = [clean_str(r.get("sku")) for r in rows]
+    store_codes = [clean_str(r.get("store_code")) for r in rows]
+
+    product_map = fetch_id_map("products", "sku", "id", skus, "No se pudo obtener productos")
+    missing_skus = [sku for sku in set(skus) if sku and sku not in product_map]
+    if missing_skus:
+        for sku in missing_skus:
+            errors.append({"row": None, "field": "sku", "error": f"SKU no encontrado: {sku}"})
+
+    # Crear tiendas faltantes con nombre = code
+    existing_store_map = fetch_id_map("stores", "code", "id", store_codes, "No se pudo obtener tiendas")
+    missing_stores = [code for code in set(store_codes) if code and code not in existing_store_map]
+    if missing_stores:
+        supabase_run(
+            supabase.table("stores").upsert(
+                [{"code": code, "name": code, "channel": "unspecified"} for code in missing_stores],
+                on_conflict="code",
+            ),
+            "No se pudieron crear tiendas faltantes",
+        )
+        # refrescar mapa
+        existing_store_map = fetch_id_map("stores", "code", "id", store_codes, "No se pudo obtener tiendas")
+
+    for idx, row in enumerate(rows):
+        row_number = idx + 2
+        row_errors: List[Dict[str, Any]] = []
+
+        sku = clean_str(row.get("sku"))
+        store_code = clean_str(row.get("store_code"))
+        sale_date_raw = clean_str(row.get("sale_date"))
+        units_sold = parse_int_field(row.get("units_sold"), "units_sold", row_number, row_errors)
+        revenue = parse_float_field(row.get("revenue"), "revenue", row_number, row_errors, allow_empty=True)
+
+        if not sku:
+            add_error(row_errors, row_number, "sku", "SKU requerido")
+        if not store_code:
+            add_error(row_errors, row_number, "store_code", "store_code requerido")
+
+        try:
+            sale_date_parsed = datetime.fromisoformat(sale_date_raw).date() if sale_date_raw else None
+        except ValueError:
+            add_error(row_errors, row_number, "sale_date", "Fecha inválida, usa YYYY-MM-DD")
+            sale_date_parsed = None
+
+        if sku and sku not in product_map:
+            add_error(row_errors, row_number, "sku", f"SKU no encontrado: {sku}")
+        if store_code and store_code not in existing_store_map:
+            add_error(row_errors, row_number, "store_code", f"Tienda no encontrada: {store_code}")
+
+        raw_rows.append(
+            {
+                "batch_id": None,
+                "row_number": row_number,
+                "sku": sku,
+                "store_code": store_code,
+                "sale_date": sale_date_parsed.isoformat() if sale_date_parsed else None,
+                "units_sold": units_sold,
+                "revenue": revenue,
+                "errors": "; ".join(err["error"] for err in row_errors) if row_errors else None,
+            }
+        )
+
+        if row_errors:
+            errors.extend(row_errors)
+            continue
+
+        sales.append(
+            {
+                "product_id": product_map[sku],
+                "store_id": existing_store_map[store_code],
+                "sale_date": sale_date_parsed.isoformat(),
+                "units_sold": units_sold,
+                "revenue": revenue,
+            }
+        )
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"message": "Errores de validación", "errors": errors})
+
+    batch_id = insert_import_batch("sales")
+    if raw_rows:
+        for r in raw_rows:
+            r["batch_id"] = batch_id
+        supabase_run(
+            supabase.table("raw_sales_history").insert(raw_rows),
+            "No se pudo registrar las filas de ventas",
+        )
+
+    supabase_run(
+        supabase.table("sales_history").upsert(sales, on_conflict="product_id,store_id,sale_date"),
+        "No se pudo importar ventas",
+    )
+    complete_import_batch(batch_id, status="completed")
+
+    return {"imported": len(sales), "errors": []}
+
+
+@app.post("/imports/inventory", status_code=201)
+async def import_inventory_csv(file: UploadFile = File(...)):
+    """Importa inventario actual desde CSV. Aborta si hay errores."""
+    rows = await read_csv_upload(file, ["sku", "store_code", "on_hand", "cover_days"])
+    errors: List[Dict[str, Any]] = []
+    inventory_rows: List[Dict[str, Any]] = []
+    raw_rows: List[Dict[str, Any]] = []
+
+    skus = [clean_str(r.get("sku")) for r in rows]
+    store_codes = [clean_str(r.get("store_code")) for r in rows]
+
+    product_map = fetch_id_map("products", "sku", "id", skus, "No se pudo obtener productos")
+    missing_skus = [sku for sku in set(skus) if sku and sku not in product_map]
+    if missing_skus:
+        for sku in missing_skus:
+            errors.append({"row": None, "field": "sku", "error": f"SKU no encontrado: {sku}"})
+
+    existing_store_map = fetch_id_map("stores", "code", "id", store_codes, "No se pudo obtener tiendas")
+    missing_stores = [code for code in set(store_codes) if code and code not in existing_store_map]
+    if missing_stores:
+        supabase_run(
+            supabase.table("stores").upsert(
+                [{"code": code, "name": code, "channel": "unspecified"} for code in missing_stores],
+                on_conflict="code",
+            ),
+            "No se pudieron crear tiendas faltantes",
+        )
+        existing_store_map = fetch_id_map("stores", "code", "id", store_codes, "No se pudo obtener tiendas")
+
+    for idx, row in enumerate(rows):
+        row_number = idx + 2
+        row_errors: List[Dict[str, Any]] = []
+
+        sku = clean_str(row.get("sku"))
+        store_code = clean_str(row.get("store_code"))
+        on_hand = parse_int_field(row.get("on_hand"), "on_hand", row_number, row_errors)
+        cover_days = parse_int_field(row.get("cover_days"), "cover_days", row_number, row_errors)
+
+        if not sku:
+            add_error(row_errors, row_number, "sku", "SKU requerido")
+        if not store_code:
+            add_error(row_errors, row_number, "store_code", "store_code requerido")
+
+        if sku and sku not in product_map:
+            add_error(row_errors, row_number, "sku", f"SKU no encontrado: {sku}")
+        if store_code and store_code not in existing_store_map:
+            add_error(row_errors, row_number, "store_code", f"Tienda no encontrada: {store_code}")
+
+        raw_rows.append(
+            {
+                "batch_id": None,
+                "row_number": row_number,
+                "sku": sku,
+                "store_code": store_code,
+                "on_hand": on_hand,
+                "cover_days": cover_days,
+                "errors": "; ".join(err["error"] for err in row_errors) if row_errors else None,
+            }
+        )
+
+        if row_errors:
+            errors.extend(row_errors)
+            continue
+
+        inventory_rows.append(
+            {
+                "product_id": product_map[sku],
+                "store_id": existing_store_map[store_code],
+                "on_hand": on_hand,
+                "cover_days": cover_days,
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
+
+    if errors:
+        raise HTTPException(status_code=400, detail={"message": "Errores de validación", "errors": errors})
+
+    batch_id = insert_import_batch("inventory")
+    if raw_rows:
+        for r in raw_rows:
+            r["batch_id"] = batch_id
+        supabase_run(
+            supabase.table("raw_inventory").insert(raw_rows),
+            "No se pudo registrar las filas de inventario",
+        )
+
+    supabase_run(
+        supabase.table("inventory").upsert(inventory_rows, on_conflict="product_id,store_id"),
+        "No se pudo importar inventario",
+    )
+    complete_import_batch(batch_id, status="completed")
+
+    return {"imported": len(inventory_rows), "errors": []}
 
 def woo_rest_request(method: str, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
     """Realiza una llamada autenticada al API REST de WooCommerce."""
