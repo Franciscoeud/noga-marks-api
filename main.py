@@ -330,7 +330,7 @@ def find_inventory_product(woo_product_id: Optional[int], woo_variant_id: Option
             "No se pudo buscar producto por ID de WooCommerce"
         )
         if data:
-        return data[0]
+            return data[0]
     return None
 
 
