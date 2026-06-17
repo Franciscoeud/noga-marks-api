@@ -337,6 +337,9 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+[functions.ops-daily-notifications]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
