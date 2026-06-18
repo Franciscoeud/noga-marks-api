@@ -146,6 +146,21 @@ function formatDateTime(value: unknown) {
   }).format(parsed);
 }
 
+function formatDateOnly(value: unknown) {
+  if (!value) return "Sin fecha";
+  const text = String(value);
+  const match = text.match(/^\d{4}-\d{2}-\d{2}/);
+  if (match) return match[0];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
 function compactLine(value: unknown, maxLength = 90) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   if (text.length <= maxLength) return text;
@@ -163,7 +178,7 @@ function buildCriticalOrdersText(summary: Record<string, unknown>) {
       const cod = order.cod ? `#${order.cod}` : "#-";
       const client = compactLine(order.client ?? "-", 32);
       const stage = compactLine(order.current_stage_title ?? "Sin etapa", 42);
-      const due = formatDateTime(order.delivery_at);
+      const due = formatDateOnly(order.delivery_at);
       return `${index + 1}. ${cod} ${client} - ${stage} - ${due}`;
     })
     .join("\n");
