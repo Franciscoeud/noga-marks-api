@@ -177,9 +177,11 @@ function buildCriticalOrdersText(summary: Record<string, unknown>) {
       const order = raw as Record<string, unknown>;
       const cod = order.cod ? `#${order.cod}` : "#-";
       const client = compactLine(order.client ?? "-", 32);
+      const orderType = compactLine(order.order_type_name ?? "", 52);
       const stage = compactLine(order.current_stage_title ?? "Sin etapa", 42);
       const due = formatDateOnly(order.delivery_at);
-      return `${index + 1}. ${cod} ${client} - ${stage} - ${due}`;
+      const processStage = orderType ? `${orderType} > ${stage}` : stage;
+      return `${index + 1}. ${cod} ${client} - ${processStage} - ${due}`;
     })
     .join("\n");
 }
@@ -379,6 +381,46 @@ async function logNotification(params: {
   });
 }
 
+function getRelationName(value: unknown) {
+  const relation = Array.isArray(value) ? value[0] : value;
+  if (!relation || typeof relation !== "object") return "";
+  return String((relation as Record<string, unknown>).name ?? "").trim();
+}
+
+async function enrichDailySummaryOrderTypes(summary: Record<string, unknown>) {
+  const criticalOrders = Array.isArray(summary.critical_orders)
+    ? (summary.critical_orders as Record<string, unknown>[])
+    : [];
+  const orderIds = [
+    ...new Set(
+      criticalOrders
+        .filter((order) => !order.order_type_name && order.id)
+        .map((order) => String(order.id)),
+    ),
+  ];
+
+  if (orderIds.length === 0) return summary;
+
+  const { data, error } = await supabase
+    .from("ops_orders")
+    .select("id, order_type:ops_order_types(name)")
+    .in("id", orderIds);
+  if (error) throw error;
+
+  const namesByOrderId = new Map<string, string>();
+  for (const row of data ?? []) {
+    const name = getRelationName((row as Record<string, unknown>).order_type);
+    if (name) namesByOrderId.set(String(row.id), name);
+  }
+
+  for (const order of criticalOrders) {
+    const name = namesByOrderId.get(String(order.id));
+    if (name) order.order_type_name = name;
+  }
+
+  return summary;
+}
+
 async function buildSummaryForRecipient(
   recipient: NotificationRecipient,
   date: string,
@@ -391,6 +433,7 @@ async function buildSummaryForRecipient(
     });
     if (error) throw error;
     const summary = (data ?? {}) as Record<string, unknown>;
+    await enrichDailySummaryOrderTypes(summary);
     return {
       type: "daily_summary" as const,
       summary,
