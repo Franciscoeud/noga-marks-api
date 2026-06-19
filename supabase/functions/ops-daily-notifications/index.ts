@@ -24,19 +24,29 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-ops-notification-secret",
 };
 
-const SPANISH_MONTHS = [
-  "Enero",
-  "Febrero",
-  "Marzo",
-  "Abril",
-  "Mayo",
-  "Junio",
-  "Julio",
-  "Agosto",
-  "Septiembre",
-  "Octubre",
-  "Noviembre",
-  "Diciembre",
+const SPANISH_WEEKDAYS = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábado",
+];
+
+const SPANISH_SHORT_MONTHS = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
 ];
 
 type NotificationMode = "daily" | "assignees" | "all";
@@ -165,7 +175,36 @@ type DateParts = {
   year: string;
   monthIndex: number;
   day: string;
+  weekdayIndex: number;
 };
+
+function buildDateParts(year: string | undefined, month: string | undefined, day: string | undefined): DateParts | null {
+  const monthIndex = Number(month) - 1;
+  const yearNumber = Number(year);
+  const dayNumber = Number(day);
+
+  if (
+    !year ||
+    !day ||
+    !Number.isInteger(yearNumber) ||
+    !Number.isInteger(dayNumber) ||
+    monthIndex < 0 ||
+    monthIndex >= SPANISH_SHORT_MONTHS.length
+  ) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(yearNumber, monthIndex, dayNumber));
+  if (
+    date.getUTCFullYear() !== yearNumber ||
+    date.getUTCMonth() !== monthIndex ||
+    date.getUTCDate() !== dayNumber
+  ) {
+    return null;
+  }
+
+  return { year, monthIndex, day, weekdayIndex: date.getUTCDay() };
+}
 
 function getPeruDateParts(date: Date): DateParts | null {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -177,13 +216,8 @@ function getPeruDateParts(date: Date): DateParts | null {
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;
   const day = parts.find((part) => part.type === "day")?.value;
-  const monthIndex = Number(month) - 1;
 
-  if (!year || !day || monthIndex < 0 || monthIndex >= SPANISH_MONTHS.length) {
-    return null;
-  }
-
-  return { year, monthIndex, day };
+  return buildDateParts(year, month, day);
 }
 
 function extractDateParts(value: unknown): DateParts | null {
@@ -191,10 +225,7 @@ function extractDateParts(value: unknown): DateParts | null {
   const text = String(value).trim();
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
-    const monthIndex = Number(match[2]) - 1;
-    if (monthIndex >= 0 && monthIndex < SPANISH_MONTHS.length) {
-      return { year: match[1], monthIndex, day: match[3] };
-    }
+    return buildDateParts(match[1], match[2], match[3]);
   }
 
   const parsed = new Date(text);
@@ -205,13 +236,13 @@ function extractDateParts(value: unknown): DateParts | null {
 function formatDailySummaryDate(value: unknown) {
   const parts = extractDateParts(value);
   if (!parts) return "Sin fecha";
-  return `${parts.day} de ${SPANISH_MONTHS[parts.monthIndex]} ${parts.year}`;
+  return `${SPANISH_WEEKDAYS[parts.weekdayIndex]}, ${parts.day} ${SPANISH_SHORT_MONTHS[parts.monthIndex]} ${parts.year}`;
 }
 
 function formatCriticalOrderDate(value: unknown) {
   const parts = extractDateParts(value);
   if (!parts) return "Sin fecha";
-  return `${parts.day} de ${SPANISH_MONTHS[parts.monthIndex]}`;
+  return `${SPANISH_WEEKDAYS[parts.weekdayIndex]}, ${parts.day} ${SPANISH_SHORT_MONTHS[parts.monthIndex]}`;
 }
 
 function compactLine(value: unknown, maxLength = 90) {
