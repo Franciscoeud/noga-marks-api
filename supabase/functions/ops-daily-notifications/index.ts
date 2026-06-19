@@ -24,6 +24,21 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-ops-notification-secret",
 };
 
+const SPANISH_MONTHS = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
 type NotificationMode = "daily" | "assignees" | "all";
 
 type NotificationRequest = {
@@ -146,19 +161,57 @@ function formatDateTime(value: unknown) {
   }).format(parsed);
 }
 
-function formatDateOnly(value: unknown) {
-  if (!value) return "Sin fecha";
-  const text = String(value);
-  const match = text.match(/^\d{4}-\d{2}-\d{2}/);
-  if (match) return match[0];
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return text;
-  return new Intl.DateTimeFormat("en-CA", {
+type DateParts = {
+  year: string;
+  monthIndex: number;
+  day: string;
+};
+
+function getPeruDateParts(date: Date): DateParts | null {
+  const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Lima",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(parsed);
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  const monthIndex = Number(month) - 1;
+
+  if (!year || !day || monthIndex < 0 || monthIndex >= SPANISH_MONTHS.length) {
+    return null;
+  }
+
+  return { year, monthIndex, day };
+}
+
+function extractDateParts(value: unknown): DateParts | null {
+  if (!value) return null;
+  const text = String(value).trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const monthIndex = Number(match[2]) - 1;
+    if (monthIndex >= 0 && monthIndex < SPANISH_MONTHS.length) {
+      return { year: match[1], monthIndex, day: match[3] };
+    }
+  }
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return getPeruDateParts(parsed);
+}
+
+function formatDailySummaryDate(value: unknown) {
+  const parts = extractDateParts(value);
+  if (!parts) return "Sin fecha";
+  return `${parts.day} de ${SPANISH_MONTHS[parts.monthIndex]} ${parts.year}`;
+}
+
+function formatCriticalOrderDate(value: unknown) {
+  const parts = extractDateParts(value);
+  if (!parts) return "Sin fecha";
+  return `${parts.day} de ${SPANISH_MONTHS[parts.monthIndex]}`;
 }
 
 function compactLine(value: unknown, maxLength = 90) {
@@ -179,7 +232,7 @@ function buildCriticalOrdersText(summary: Record<string, unknown>) {
       const client = compactLine(order.client ?? "-", 32);
       const orderType = compactLine(order.order_type_name ?? "", 52);
       const stage = compactLine(order.current_stage_title ?? "Sin etapa", 42);
-      const due = formatDateOnly(order.delivery_at);
+      const due = formatCriticalOrderDate(order.delivery_at);
       const processStage = orderType ? `${orderType} > ${stage}` : stage;
       return `${index + 1}. ${cod} ${client} - ${processStage} - ${due}`;
     })
@@ -206,8 +259,9 @@ function buildPriorityTasksText(summary: Record<string, unknown>) {
 function buildDailyMessage(summary: Record<string, unknown>) {
   const link = `${OPS_APP_BASE_URL}/ops/orders`;
   const top = buildCriticalOrdersText(summary);
+  const summaryDate = formatDailySummaryDate(summary.date);
   const body = [
-    `Resumen OPS ${summary.date ?? ""}`,
+    `Resumen OPS ${summaryDate}`,
     `Activos: ${summary.total_pending_orders ?? 0}`,
     `Vencidos: ${summary.overdue_orders ?? 0} | Vencen hoy: ${summary.due_today_orders ?? 0}`,
     `Pendiente: ${summary.pending_status_orders ?? 0} | Procesando: ${summary.processing_status_orders ?? 0}`,
@@ -221,7 +275,7 @@ function buildDailyMessage(summary: Record<string, unknown>) {
   return {
     body,
     contentVariables: {
-      "1": String(summary.date ?? ""),
+      "1": summaryDate,
       "2": String(summary.total_pending_orders ?? 0),
       "3": String(summary.overdue_orders ?? 0),
       "4": String(summary.due_today_orders ?? 0),
