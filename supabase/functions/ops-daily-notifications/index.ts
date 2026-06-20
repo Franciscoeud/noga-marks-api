@@ -49,7 +49,7 @@ const SPANISH_SHORT_MONTHS = [
   "dic",
 ];
 
-type NotificationMode = "daily" | "assignees" | "all";
+type NotificationMode = "daily" | "assignees" | "all" | "dashboard_preview";
 
 type NotificationRequest = {
   mode?: NotificationMode;
@@ -70,6 +70,12 @@ type NotificationRecipient = {
   assignee_id: string | null;
   active: boolean;
   timezone: string;
+};
+
+type OpsAssignee = {
+  id: string;
+  name: string;
+  active: boolean;
 };
 
 type SendResult = {
@@ -171,6 +177,12 @@ function formatDateTime(value: unknown) {
   }).format(parsed);
 }
 
+function formatClock(hour: number, minute: string) {
+  const period = hour < 12 ? "a. m." : "p. m.";
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minute.padStart(2, "0")} ${period}`;
+}
+
 type DateParts = {
   year: string;
   monthIndex: number;
@@ -245,6 +257,19 @@ function formatCriticalOrderDate(value: unknown) {
   return `${SPANISH_WEEKDAYS[parts.weekdayIndex]}, ${parts.day} ${SPANISH_SHORT_MONTHS[parts.monthIndex]}`;
 }
 
+function formatTaskDueDateTime(value: unknown) {
+  if (!value) return "Sin fecha";
+  const parts = extractDateParts(value);
+  if (!parts) return formatDateTime(value);
+
+  const text = String(value).trim();
+  const timeMatch = text.match(/(?:T|\s)(\d{2}):(\d{2})/);
+  const dateText = `${SPANISH_WEEKDAYS[parts.weekdayIndex]}, ${parts.day} ${SPANISH_SHORT_MONTHS[parts.monthIndex]}`;
+  if (!timeMatch) return dateText;
+
+  return `${dateText} ${formatClock(Number(timeMatch[1]), timeMatch[2])}`;
+}
+
 function compactLine(value: unknown, maxLength = 90) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   if (text.length <= maxLength) return text;
@@ -281,7 +306,7 @@ function buildPriorityTasksText(summary: Record<string, unknown>) {
       const cod = task.order_cod ? `#${task.order_cod}` : "#-";
       const client = compactLine(task.client ?? "-", 28);
       const stage = compactLine(task.title ?? task.step_code ?? "Sin etapa", 38);
-      const due = formatDateTime(task.due_at_local ?? task.due_at);
+      const due = formatTaskDueDateTime(task.due_at_local ?? task.due_at);
       return `${index + 1}. ${cod} ${client} - ${stage} - ${due}`;
     })
     .join("\n");
@@ -344,6 +369,38 @@ function buildAssigneeMessage(summary: Record<string, unknown>, assigneeId: stri
       "4": String(summary.due_today_tasks ?? 0),
       "5": top,
       "6": link,
+    },
+  };
+}
+
+function buildDashboardAssigneeMessage(summary: Record<string, unknown>, assigneeId: string | null) {
+  const assigneeName = String(summary.assignee_name ?? "Responsable");
+  const link = assigneeId
+    ? `${OPS_APP_BASE_URL}/ops/inbox?assignee_id=${encodeURIComponent(assigneeId)}`
+    : `${OPS_APP_BASE_URL}/ops/inbox`;
+  const top = buildPriorityTasksText(summary);
+  const summaryDate = formatDailySummaryDate(summary.date);
+  const body = [
+    `Resumen OPS - ${assigneeName} ${summaryDate}`,
+    `Pendientes: ${summary.total_pending_tasks ?? 0}`,
+    `Vencidas: ${summary.overdue_tasks ?? 0} | Vencen hoy: ${summary.due_today_tasks ?? 0}`,
+    "",
+    "Criticos:",
+    top,
+    "",
+    `Ver bandeja: ${link}`,
+  ].join("\n");
+
+  return {
+    body,
+    contentVariables: {
+      "1": assigneeName,
+      "2": summaryDate,
+      "3": String(summary.total_pending_tasks ?? 0),
+      "4": String(summary.overdue_tasks ?? 0),
+      "5": String(summary.due_today_tasks ?? 0),
+      "6": top,
+      "7": link,
     },
   };
 }
@@ -506,19 +563,84 @@ async function enrichDailySummaryOrderTypes(summary: Record<string, unknown>) {
   return summary;
 }
 
+async function buildDailySummary(date: string, limit: number) {
+  const { data, error } = await supabase.rpc("ops_build_daily_order_summary", {
+    p_today: date,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  const summary = (data ?? {}) as Record<string, unknown>;
+  await enrichDailySummaryOrderTypes(summary);
+  return summary;
+}
+
+async function buildAssigneeSummary(assigneeId: string, date: string, limit: number) {
+  const { data, error } = await supabase.rpc("ops_build_assignee_task_summary", {
+    p_assignee_id: assigneeId,
+    p_today: date,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+function getNumericSummaryValue(summary: Record<string, unknown>, key: string) {
+  const value = Number(summary[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+async function getActiveOpsAssignees() {
+  const { data, error } = await supabase
+    .from("ops_assignees")
+    .select("id, name, active")
+    .eq("active", true)
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as OpsAssignee[];
+}
+
+async function buildDashboardPreview(date: string, limit: number) {
+  const dailySummary = await buildDailySummary(date, limit);
+  const dailyMessage = buildDailyMessage(dailySummary);
+  const results: SendResult[] = [
+    {
+      recipient_id: "coo",
+      recipient_name: "COO",
+      notification_type: "daily_summary",
+      status: "success",
+      dry_run: true,
+      twilio_message_sid: null,
+      preview: dailyMessage.body,
+    },
+  ];
+
+  const assignees = await getActiveOpsAssignees();
+  for (const assignee of assignees) {
+    const summary = await buildAssigneeSummary(assignee.id, date, limit);
+    if (getNumericSummaryValue(summary, "total_pending_tasks") <= 0) continue;
+
+    const message = buildDashboardAssigneeMessage(summary, assignee.id);
+    results.push({
+      recipient_id: `assignee-${assignee.id}`,
+      recipient_name: String(summary.assignee_name ?? assignee.name),
+      notification_type: "assignee_summary",
+      status: "success",
+      dry_run: true,
+      twilio_message_sid: null,
+      preview: message.body,
+    });
+  }
+
+  return results;
+}
+
 async function buildSummaryForRecipient(
   recipient: NotificationRecipient,
   date: string,
   limit: number,
 ) {
   if (recipient.recipient_type === "general") {
-    const { data, error } = await supabase.rpc("ops_build_daily_order_summary", {
-      p_today: date,
-      p_limit: limit,
-    });
-    if (error) throw error;
-    const summary = (data ?? {}) as Record<string, unknown>;
-    await enrichDailySummaryOrderTypes(summary);
+    const summary = await buildDailySummary(date, limit);
     return {
       type: "daily_summary" as const,
       summary,
@@ -531,13 +653,7 @@ async function buildSummaryForRecipient(
     throw new Error("El destinatario responsable no tiene assignee_id.");
   }
 
-  const { data, error } = await supabase.rpc("ops_build_assignee_task_summary", {
-    p_assignee_id: recipient.assignee_id,
-    p_today: date,
-    p_limit: limit,
-  });
-  if (error) throw error;
-  const summary = (data ?? {}) as Record<string, unknown>;
+  const summary = await buildAssigneeSummary(recipient.assignee_id, date, limit);
   return {
     type: "assignee_summary" as const,
     summary,
@@ -659,6 +775,14 @@ serve(async (req) => {
     const canPrivilegedSend = isServiceRoleRequest(req) || isSharedSecretRequest(req);
     const canUserDryRun = await isOpsUserRequest(req);
 
+    const mode = body.mode ?? "daily";
+    if (!["daily", "assignees", "all", "dashboard_preview"].includes(mode)) {
+      return jsonResponse({ error: "Invalid mode" }, 400);
+    }
+    if (mode === "dashboard_preview" && !dryRun) {
+      return jsonResponse({ error: "dashboard_preview only supports dry_run." }, 400);
+    }
+
     if (!canPrivilegedSend && !canUserDryRun) {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
@@ -666,13 +790,20 @@ serve(async (req) => {
       return jsonResponse({ error: "Real sends require service role or OPS_NOTIFICATION_SECRET." }, 403);
     }
 
-    const mode = body.mode ?? "daily";
-    if (!["daily", "assignees", "all"].includes(mode)) {
-      return jsonResponse({ error: "Invalid mode" }, 400);
-    }
-
     const notificationDate = body.notification_date ?? getPeruToday();
     const limit = normalizeLimit(body.limit);
+    if (mode === "dashboard_preview") {
+      const results = await buildDashboardPreview(notificationDate, limit);
+      return jsonResponse({
+        ok: true,
+        mode,
+        dry_run: true,
+        notification_date: notificationDate,
+        recipients_count: results.length,
+        results,
+      });
+    }
+
     const recipients = await getRecipients(mode as NotificationMode, body);
     const results: SendResult[] = [];
 
