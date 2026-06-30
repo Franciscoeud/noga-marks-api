@@ -1,4 +1,4 @@
--- OPS: control documents - internment guides
+/* -- OPS: control documents - internment guides
 begin;
 
 create extension if not exists "uuid-ossp";
@@ -161,3 +161,4 @@ grant usage on sequence public.ops_internment_guide_number_seq to authenticated;
 notify pgrst, 'reload schema';
 
 commit;
+ */
