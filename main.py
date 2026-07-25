@@ -1770,7 +1770,7 @@ def process_abandoned_carts():
         total = cart.get("total", 0)
         cart_id = cart.get("id")
 
-        message = f"👋 Hola {name.split()[0]}! Notamos que dejaste algunos artículos en tu carrito 🛍️ por S/. {total:.2f}. Usa el código **AUREA10** para obtener 10% de descuento si completas tu compra hoy ✨"
+        message = f"👋 Hola {name.split()[0]}! Notamos que dejaste algunos artículos en tu carrito 🛍️ por S/. {total:.2f}. Revisa las promociones vigentes y completa tu compra."
 
         # WhatsApp
         try:
@@ -1786,12 +1786,12 @@ def process_abandoned_carts():
             msg = MIMEMultipart()
             msg["From"] = os.getenv("EMAIL_FROM")
             msg["To"] = email
-            msg["Subject"] = "Completa tu compra en Aurea Move ✨"
+            msg["Subject"] = "Completa tu compra en Aurenzi"
             body = f"""
             <h3>Hola {name.split()[0]},</h3>
             <p>Tu carrito te está esperando 🛍️</p>
-            <p>Usa el código <strong>AUREA10</strong> y obtén 10% de descuento si compras hoy mismo.</p>
-            <p><a href="https://aureamove.com/cart" style="color:#000;">Volver al carrito</a></p>
+            <p>Revisa las promociones vigentes y completa tu compra.</p>
+            <p><a href="https://aurenzi.pe/cart" style="color:#000;">Volver al carrito</a></p>
             """
             msg.attach(MIMEText(body, "html"))
             server = smtplib.SMTP(os.getenv("EMAIL_HOST"), int(os.getenv("EMAIL_PORT", 587)))
@@ -1853,7 +1853,7 @@ def process_abandoned_carts_manual():
             total = cart.get("total", 0)
             cart_id = cart.get("id")
 
-            message = f"👋 Hola {name.split()[0]}! Notamos que dejaste algunos artículos en tu carrito 🛍️ por S/. {total:.2f}. Usa el código **AUREA10** para obtener 10% de descuento si completas tu compra hoy ✨"
+            message = f"👋 Hola {name.split()[0]}! Notamos que dejaste algunos artículos en tu carrito 🛍️ por S/. {total:.2f}. Revisa las promociones vigentes y completa tu compra."
 
             # Enviar WhatsApp
             try:
@@ -1869,12 +1869,12 @@ def process_abandoned_carts_manual():
                 msg = MIMEMultipart()
                 msg["From"] = os.getenv("EMAIL_FROM")
                 msg["To"] = email
-                msg["Subject"] = "Completa tu compra en Aurea Move ✨"
+                msg["Subject"] = "Completa tu compra en Aurenzi"
                 body = f"""
                 <h3>Hola {name.split()[0]},</h3>
                 <p>Tu carrito te está esperando 🛍️</p>
-                <p>Usa el código <strong>AUREA10</strong> y obtén 10% de descuento si compras hoy mismo.</p>
-                <p><a href="https://aureamove.com/cart" style="color:#000;">Volver al carrito</a></p>
+                <p>Revisa las promociones vigentes y completa tu compra.</p>
+                <p><a href="https://aurenzi.pe/cart" style="color:#000;">Volver al carrito</a></p>
                 """
                 msg.attach(MIMEText(body, "html"))
                 server = smtplib.SMTP(os.getenv("EMAIL_HOST"), int(os.getenv("EMAIL_PORT", 587)))

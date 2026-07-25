@@ -15,7 +15,7 @@ services:
       - key: WOO_SECRET
         sync: false
       - key: WOO_API_URL
-        value: https://nogamarks.com
+        value: https://shop.aurenzi.pe
       - key: TWILIO_ACCOUNT_SID  
         value: false
       - key: TWILIO_AUTH_TOKEN  

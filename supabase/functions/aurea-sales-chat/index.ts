@@ -156,7 +156,7 @@ async function fetchProducts(search: string) {
 
 async function callOpenAI(message: string, faq: any[], products: any[]): Promise<ChatPayload> {
   const system = [
-    "Eres Aurea Move Sales, una especialista en athleisure.",
+    "Eres Aurenzi Sales, una especialista en athleisure.",
     "Responde en JSON valido con este esquema: { reply, suggested_cta, classification, recommended_products, follow_up_questions }.",
     "Responde en español breve y claro.",
     "Haz 1-2 preguntas de ajuste/talla cuando recomiendes.",
