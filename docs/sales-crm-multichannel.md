@@ -1,5 +1,8 @@
 # Sales CRM Multicanal
 
+> Para el ciclo comercial de oportunidades y la conciliacion de proformas OPS,
+> consultar [Seguimiento comercial de cotizaciones OPS](sales-opportunity-follow-up.md).
+
 ## Resumen
 
 Este documento describe la implementacion del CRM multicanal de `sales` en NogaMarks. El flujo soporta ingesta de leads desde:
@@ -105,7 +108,7 @@ Notas:
 - `POST /crm/webhooks/meta/leads`
 - `POST /crm/webhooks/tiktok/leads`
 - `POST /crm/public/leads/web`
-- `POST /crm/webhooks/whatsapp/twilio`
+- `POST /crm/webhooks/twilio/whatsapp`
 
 ### Operacion CRM
 
@@ -311,7 +314,8 @@ Esperado:
 - se guarda inbox
 - se normaliza y crea/actualiza lead
 - si existe `source_route`, se resuelven `account_id`, `product_interest_id` y opcionalmente `requested_info_type`
-- si no existe `source_route`, el lead entra con payload crudo pero sin cuenta/interes resueltos
+- si no existe `source_route`, el payload crudo permanece en el inbox con estado
+  `failed`; no se crea un lead sin empresa propietaria
 - si hay opt-in explicito y plantilla/configuracion valida, se registra `auto_reply_sent`
 - si no hay opt-in explicito, se registra `message_skipped` por falta de consentimiento
 
@@ -321,13 +325,16 @@ Esperado:
 2. Configurar el webhook inbound de Twilio a:
 
 ```text
-https://TU_URL_PUBLICA/crm/webhooks/whatsapp/twilio
+https://TU_URL_PUBLICA/crm/webhooks/twilio/whatsapp
 ```
 
 3. Enviar un WhatsApp al numero configurado
 
 Esperado:
 
+- el payload original se registra en `crm_webhook_inbox` antes de enrutarlo
+- el inbox queda `processed`, `ignored` o `failed`, nunca pendiente por un error
+- el lead, la conversación y el mensaje quedan aislados en la empresa resuelta
 - se crea o asocia el lead por telefono
 - el lead pasa a temperatura `caliente`
 - el mensaje aparece en `Sales -> Inbox WhatsApp`
