@@ -15,7 +15,7 @@ aceptada.
    que se coordine una reescritura del historial.
 2. Configurar `CRM_SECRET_ENCRYPTION_KEY` en el backend con una clave aleatoria
    estable. No cambiarla sin volver a cifrar previamente los secretos guardados.
-3. Aplicar, en orden, las migraciones `0089`, `0090`, `0091` y `0092`.
+3. Aplicar, en orden, las migraciones `0089`, `0090`, `0091`, `0092` y `0093`.
 4. Desplegar backend y frontend.
 5. Confirmar que el usuario que ejecutará la conciliación sea miembro de CDM con
    rol `admin` o `manager`.
@@ -40,6 +40,45 @@ las plantillas desde las cuentas heredadas. Conserva las plantillas globales,
 las de cada empresa y las específicas de clientes. No elimina ni fusiona
 registros; un conflicto real dentro de la misma empresa sigue siendo rechazado
 y debe revisarse. Continuar con `0090` únicamente cuando `0089` termine sin error.
+
+### Usuarios con acceso general que reciben un 403 en Sales
+
+Nogamarks interpreta la ausencia de filas en `app_user_modules` como acceso
+general a los módulos. Sales debe respetar ese contrato tanto en el backend
+como en las reglas de seguridad de Supabase. Una lista explícita de módulos
+sigue necesitando incluir `Sales`; un error al consultar los permisos nunca
+equivale a una lista vacía.
+
+Para una instalación que ya tiene `0089`–`0092`:
+
+1. Ejecutar completo `supabase/migrations/0093_crm_unrestricted_module_access.sql`
+   en el SQL Editor del proyecto correspondiente, desde `BEGIN` hasta `COMMIT`.
+   La migración es repetible y solo reemplaza tres funciones de autorización;
+   conserva sus firmas y permisos de ejecución. No elimina ni reasigna datos,
+   no desactiva RLS y no crea usuarios ni membresías.
+2. Publicar el backend que admite usuarios sin restricciones de módulo en
+   `CrmSalesService.resolve_context`. No basta con publicar solo el código:
+   las consultas internas CRM usan el JWT del usuario y siguen sujetas a RLS.
+3. Comprobar que la cuenta tenga una membresía activa para cada empresa
+   autorizada, con el rol acordado. `viewer` permite consulta; `admin` habilita
+   la administración de Sales dentro de las empresas autorizadas. Un acceso
+   general a módulos por sí solo no permite consultar ninguna empresa.
+4. Abrir Sales, elegir la empresa y comprobar Cuentas, Leads, Inbox y
+   Oportunidades. El número de filas depende de los datos de cada empresa;
+   una lista vacía sin error no significa que haya fallado la conexión.
+5. Con datos de prueba, verificar que un administrador pueda crear/editar
+   registros en su empresa y que los accesos directos por ID a otra empresa
+   sigan rechazados. No crear registros de prueba en producción.
+
+No insertar únicamente una fila `Sales` para un usuario con acceso general:
+eso convertiría su configuración en una lista restringida y le quitaría los
+otros módulos. Tampoco asignar automáticamente todas las empresas a los usuarios
+sin módulos: las membresías requieren autorización explícita y por cuenta.
+
+La migración mantiene los controles de membresía activa, rol, propietario y
+`X-Company-Id`; no une datos de empresas. La función administrativa de la cola
+“No identificado” conserva su comportamiento previo para administradores.
+El selector permite cambiar de empresa, no consultar todas mezcladas.
 
 ## Conciliación inicial de proformas
 
