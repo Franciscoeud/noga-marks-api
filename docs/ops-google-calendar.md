@@ -21,19 +21,22 @@ La revisión encontró estas reglas en `planner-backend/main.py`:
   infraestructura, una vez por minuto, en vez de crear otra implementación en
   Edge Functions. **No configurar además n8n, Make, Supabase Cron ni otro worker.**
 
-La migración añade restricciones SQL, RLS, historial y RPC transaccionales. No
+La migración `0094` añade restricciones SQL, RLS, historial y RPC transaccionales. No
 crea tareas, clientes, contactos, contratos, usuarios ni permisos. El tipo de
 pedido se siembra idempotentemente. Los cambios de estado pasan por acciones
 explícitas; facturación queda en `not_applicable`. Un trabajo completado sin
 inicio registrado conserva `execution_started_at = NULL`.
 
-## Despliegue (todavía pendiente en producción)
+## Orden de despliegue
 
 1. Respaldar y revisar la base del proyecto correcto de Nogamarks. Aplicar primero
    **`supabase/migrations/0094_ops_google_calendar.sql` completa**, después de
    `0089`–`0093`. Es transaccional y repetible. No borra pedidos existentes.
-2. Desplegar `planner-backend` y `planner-frontend`. El backend nuevo requiere
-   la columna `origin`: **no publicarlo antes de aplicar 0094**.
+2. Para la corrección de permisos personales, aplicar también
+   **`supabase/migrations/0095_ops_calendar_user_assignments.sql` completa**.
+   Desplegar después `planner-backend` y `planner-frontend`. El backend nuevo
+   requiere `origin` y `ops_calendar_user_assignments`: **no publicarlo antes
+   de aplicar 0094 y 0095**.
 3. Configurar las variables de abajo en el servicio de backend real. El
    `render.yaml` histórico contiene también un servicio ecommerce; no copiar
    ciegamente su URL de Supabase. Usar el proyecto donde funcionan OPS y Sales.
@@ -42,12 +45,14 @@ inicio registrado conserva `execution_started_at = NULL`.
 5. Activar `OPS_GOOGLE_SYNC_ENABLED=true` después del piloto y reiniciar backend.
    El proceso necesita un servicio siempre activo, no uno que se suspenda.
 
-No se han aplicado migraciones, conectado cuentas de Google ni importado
-actividades reales como parte de las pruebas automatizadas de esta entrega.
+Las pruebas automatizadas no aplican migraciones ni modifican actividades en
+producción. El usuario confirmó posteriormente la aplicación de `0094`; se
+comprobó el backend publicado y la configuración existente de OPS - LRJ mediante
+consultas de solo lectura. La reparación `0095` debe aplicarse por separado.
 
 El commit del backend incluye `[skip render]` para no activar el despliegue
-automático antes de la migración. Después de aplicar `0094`, desplegar ese commit
-manualmente desde Render (`Manual Deploy` → `Deploy latest commit`). El push no
+automático antes de las migraciones. Después de aplicar `0094` y `0095`, desplegar
+ese commit manualmente desde Render (`Manual Deploy` → `Deploy latest commit`). El push no
 aplica SQL ni configura OAuth. El frontend puede publicarse por su integración
 Git; la nueva pantalla requiere que el backend y la migración estén desplegados.
 
@@ -102,21 +107,66 @@ y parámetros de autorización de la URL de retorno.
 
 ## Empresas, encargados y cuentas Google
 
-- Usuario: sesión de Supabase, acceso a OPS y membresía **activa** en la empresa.
+- Usuario: sesión de Supabase, acceso a OPS y empresa **activa**. Puede acceder
+  mediante una membresía empresarial existente o una asignación personal activa
+  en `ops_calendar_user_assignments`, que concede acceso **solo a Calendar**.
   Se mantiene el contrato existente: sin filas en `app_user_modules` significa
   acceso general a módulos; una lista explícita debe contener `Ops`.
 - Administrador o manager de esa empresa: conecta Google, configura calendarios,
   sincroniza manualmente y puede registrar trabajo.
-- Técnico: membresía de la empresa más permiso activo
+- Técnico con permisos heredados: membresía de la empresa más permiso activo
   `ops_inbox_user_permissions(access_level='assignee', assignee_id=...)`.
   Solo consulta y actúa sobre ese encargado en sus empresas autorizadas.
 - Permiso de bandeja `all`: permite consulta global de su empresa; por sí solo
   **no** permite ejecutar trabajos ajenos ni configurar la integración.
-- La configuración no concede membresías ni privilegios automáticamente. No
-  se necesita acceso al módulo Sales para usar la agenda de OPS.
+  Con una asignación personal activa de Calendar puede iniciar/completar solo
+  las actividades del encargado vinculado, conservando la consulta global.
+- La asignación personal exige además un permiso de bandeja activo. Si existe,
+  su encargado prevalece sobre el vínculo heredado de la bandeja **solo para
+  Calendar**, y siempre dentro de la empresa seleccionada. No modifica la
+  bandeja tradicional, los módulos autorizados ni las membresías de Sales.
+- No se necesita acceso al módulo Sales para usar la agenda de OPS. Solo las
+  membresías empresariales `admin`/`manager` ya existentes administran conexiones.
 - Los RPC de importación, acciones y publicación no son ejecutables directamente
   por usuarios del navegador. El servidor valida sesión/empresa; el RPC de
   acciones vuelve a comprobar usuario, módulo, empresa y encargado.
+
+### Reparación LRJ: consulta general y ejecución propia, sin acceso adicional a Sales
+
+`0095_ops_calendar_user_assignments.sql` introduce el vínculo privado
+`(business_unit_id, user_id) → assignee_id`. Solo el servidor administra esa
+tabla; el navegador no puede concederse permisos ni ejecutar directamente el
+RPC de inicio/cierre. Tanto el backend como SQL validan la identidad personal.
+
+La reparación de LRJ se limita al usuario `lrj@cdmservi.com`, empresa CDM y los
+identificadores de usuario/calendario/encargado verificados. Conserva
+`ops_inbox_user_permissions.access_level = 'all'` y no agrega ni modifica filas
+en `crm_business_unit_memberships` o `app_user_modules`. No toca eventos,
+pedidos, estados, credenciales de Google ni otros usuarios.
+
+La migración es transaccional y repetible. En un entorno sin ese usuario no
+crea permisos de prueba. Si el calendario o su encargado ya no coinciden con
+los verificados, se detiene para revisión. Una asignación existente desactivada
+o reasignada se conserva; repetir la migración no la reactiva ni la sobrescribe.
+
+Para activar y comprobar la reparación:
+
+1. Aplicar **0095 completa** en el proyecto Supabase de Nogamarks y comprobar
+   que terminó sin error. No volver a ejecutar migraciones anteriores después:
+   `0094` contiene la versión anterior de la función de autorización.
+2. Desplegar el backend que incorpora esta corrección. No se requiere un nuevo
+   frontend ni volver a autorizar OAuth.
+3. Con la sesión `lrj@cdmservi.com`, pulsar **Reintentar** o recargar el enlace.
+4. Comprobar consulta de actividades de CDM y disponibilidad de Iniciar/Completar
+   únicamente para LRJ. Confirmar una acción real solo cuando el trabajo ocurra;
+   no completar trabajos reales como prueba.
+5. Comprobar que una actividad ajena no permite acciones (también por API directa),
+   que otras empresas siguen inaccesibles y que Sales conserva sus permisos.
+
+Validación local de esta corrección: **150 pruebas backend y 50 pruebas SQL**,
+incluidas 12 regresiones API y 11 SQL nuevas. Las pruebas SQL se ejecutan en
+PostgreSQL desechable con rollback; no son acciones hechas por el usuario real
+ni verificaciones interactivas en su celular.
 
 En Google, Francisco comparte cada calendario de trabajo con Edgar según el
 permiso necesario para crear/editar, y con el técnico para consultar su agenda.
