@@ -249,6 +249,15 @@ desde SQL ni reutilizarse para facturación o checklist.
 
 ### Recuperar checks pendientes por autorización vencida
 
+Incidente verificado el 11/10/2026: la conexión compartida de los seis calendarios
+OPS recibió `invalid_grant` al renovar OAuth. El worker seguía intentándolo cada
+minuto; su última sincronización exitosa fue el 10/10 a las 22:11 de Lima.
+Cuatro cierres de Francisco permanecían completados y en cola. El diagnóstico
+específico y su aviso en Configuración se desplegaron y verificaron en producción;
+168 pruebas backend, build y lint frontend aprobaron. La coincidencia con siete
+días desde la autorización apunta a Testing, pero el estado de la app en Google
+Cloud requiere verificación independiente.
+
 Si los calendarios de una misma conexión dejan de sincronizar al mismo tiempo,
 comparar `last_synced_at` con `updated_at`: las actualizaciones periódicas de
 `updated_at` con un error indican que el worker sigue ejecutándose. Un cierre
