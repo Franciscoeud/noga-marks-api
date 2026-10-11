@@ -247,6 +247,35 @@ con esperas acotadas y en el siguiente ciclo. Deshabilitar un vínculo detiene
 su sincronización sin eliminar su historial. No deben borrarse pedidos Calendar
 desde SQL ni reutilizarse para facturación o checklist.
 
+### Recuperar checks pendientes por autorización vencida
+
+Si los calendarios de una misma conexión dejan de sincronizar al mismo tiempo,
+comparar `last_synced_at` con `updated_at`: las actualizaciones periódicas de
+`updated_at` con un error indican que el worker sigue ejecutándose. Un cierre
+con `publish_pending = true` conserva su estado y hora en OPS mientras Google
+no acepte la publicación; no volver a completar el trabajo para probarlo.
+
+El proveedor distingue `invalid_grant` exclusivamente en la renovación OAuth
+del token. Registra un mensaje de **volver a conectar la cuenta** en la conexión
+y los calendarios; nunca guarda la respuesta OAuth, tokens ni `error_description`.
+Un HTTP 400 de Calendar se mantiene como fallo distinto. `invalid_client` indica
+configuración OAuth del servidor, no una autorización que el trabajador pueda
+resolver. La conexión y sus vínculos no se desactivan ni eliminan al fallar.
+
+Para recuperar la autorización, en **OPS → Google Calendar → Configuración →
+Conectar cuenta de Google**, autorizar de nuevo **la misma cuenta Google** de
+la conexión afectada. El servidor actualiza esa conexión por su identidad Google
+y conserva los vínculos y el trabajo registrado. Después pulsar **Sincronizar
+con Google** o esperar el siguiente ciclo automático. Verificar que los cierres
+pendientes pasan a `publish_pending = false` y que Google muestra una sola `✔`.
+
+Si la app OAuth externa sigue en estado **Testing**, Google emite refresh tokens
+de siete días para los scopes de Calendar. Revisar Google Auth Platform →
+Audience y el estado de publicación/verificación de la app; después de corregir
+el estado, reconectar para obtener una autorización nueva. No se puede recuperar
+un refresh token revocado simplemente reintentando. Véase
+[expiración oficial de tokens OAuth](https://developers.google.com/identity/protocols/oauth2#expiration).
+
 ## Piloto manual (Google real pendiente)
 
 Usar un calendario identificado **PRUEBA OPS**, con encargado y usuarios
