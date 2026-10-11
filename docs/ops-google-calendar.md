@@ -33,10 +33,11 @@ inicio registrado conserva `execution_started_at = NULL`.
    **`supabase/migrations/0094_ops_google_calendar.sql` completa**, después de
    `0089`–`0093`. Es transaccional y repetible. No borra pedidos existentes.
 2. Para la corrección de permisos personales, aplicar también
-   **`supabase/migrations/0095_ops_calendar_user_assignments.sql` completa**.
+   **`supabase/migrations/0095_ops_calendar_user_assignments.sql` completa** y
+   después **`supabase/migrations/0096_ops_calendar_personal_read_scope.sql` completa**.
    Desplegar después `planner-backend` y `planner-frontend`. El backend nuevo
    requiere `origin` y `ops_calendar_user_assignments`: **no publicarlo antes
-   de aplicar 0094 y 0095**.
+    de aplicar 0094, 0095 y 0096**.
 3. Configurar las variables de abajo en el servicio de backend real. El
    `render.yaml` histórico contiene también un servicio ecommerce; no copiar
    ciegamente su URL de Supabase. Usar el proyecto donde funcionan OPS y Sales.
@@ -119,8 +120,9 @@ y parámetros de autorización de la URL de retorno.
   Solo consulta y actúa sobre ese encargado en sus empresas autorizadas.
 - Permiso de bandeja `all`: permite consulta global de su empresa; por sí solo
   **no** permite ejecutar trabajos ajenos ni configurar la integración.
-  Con una asignación personal activa de Calendar puede iniciar/completar solo
-  las actividades del encargado vinculado, conservando la consulta global.
+  Con una asignación personal activa de Calendar solo permite consultar e
+  iniciar/completar las actividades del encargado vinculado en Calendar.
+  La bandeja tradicional conserva su permiso general.
 - La asignación personal exige además un permiso de bandeja activo. Si existe,
   su encargado prevalece sobre el vínculo heredado de la bandeja **solo para
   Calendar**, y siempre dentro de la empresa seleccionada. No modifica la
@@ -131,12 +133,15 @@ y parámetros de autorización de la URL de retorno.
   por usuarios del navegador. El servidor valida sesión/empresa; el RPC de
   acciones vuelve a comprobar usuario, módulo, empresa y encargado.
 
-### Reparación LRJ: consulta general y ejecución propia, sin acceso adicional a Sales
+### Reparación LRJ: consulta y ejecución propias, sin acceso adicional a Sales
 
 `0095_ops_calendar_user_assignments.sql` introduce el vínculo privado
 `(business_unit_id, user_id) → assignee_id`. Solo el servidor administra esa
 tabla; el navegador no puede concederse permisos ni ejecutar directamente el
 RPC de inicio/cierre. Tanto el backend como SQL validan la identidad personal.
+`0096_ops_calendar_personal_read_scope.sql` hace que ese vínculo limite también
+la lectura, aunque la bandeja tradicional tenga permiso `all`. Los administradores
+y managers existentes conservan la consulta y gestión general de su empresa.
 
 La reparación de LRJ se limita al usuario `lrj@cdmservi.com`, empresa CDM y los
 identificadores de usuario/calendario/encargado verificados. Conserva
@@ -151,20 +156,27 @@ o reasignada se conserva; repetir la migración no la reactiva ni la sobrescribe
 
 Para activar y comprobar la reparación:
 
-1. Aplicar **0095 completa** en el proyecto Supabase de Nogamarks y comprobar
+1. Aplicar **0095 y después 0096 completas** en el proyecto Supabase de Nogamarks y comprobar
    que terminó sin error. No volver a ejecutar migraciones anteriores después:
-   `0094` contiene la versión anterior de la función de autorización.
-2. Desplegar el backend que incorpora esta corrección. No se requiere un nuevo
-   frontend ni volver a autorizar OAuth.
+   `0094` y `0095` contienen versiones anteriores de la función de autorización.
+2. Desplegar el backend y frontend que incorporan esta corrección. No se requiere
+   volver a autorizar OAuth. El contexto de la API incluye `read_all` para que el
+   filtro de responsables refleje el alcance autorizado.
 3. Con la sesión `lrj@cdmservi.com`, pulsar **Reintentar** o recargar el enlace.
-4. Comprobar consulta de actividades de CDM y disponibilidad de Iniciar/Completar
-   únicamente para LRJ. Confirmar una acción real solo cuando el trabajo ocurra;
+4. Comprobar que el enlace **Volver a la agenda**, la navegación Google Calendar
+   y las vistas día/semana/mes/lista solo muestran actividades de LRJ. El filtro
+   Responsable debe quedar fijo en LRJ. Confirmar una acción real solo cuando el trabajo ocurra;
    no completar trabajos reales como prueba.
-5. Comprobar que una actividad ajena no permite acciones (también por API directa),
-   que otras empresas siguen inaccesibles y que Sales conserva sus permisos.
+5. Comprobar que un enlace directo a una actividad ajena devuelve 404 y que un
+   filtro por otro encargado devuelve 403; también verificar API directa y RLS
+   de Supabase para pedidos, calendarios e historial. Otras empresas siguen
+   inaccesibles y Sales conserva sus permisos.
+6. Cambiar entre una sesión administradora y LRJ en el mismo navegador: los datos
+   en caché y el filtro deben ajustarse al usuario conectado.
 
-Validación local de esta corrección: **150 pruebas backend y 50 pruebas SQL**,
-incluidas 12 regresiones API y 11 SQL nuevas. Las pruebas SQL se ejecutan en
+Validación local de esta corrección: **161 pruebas backend, 142 pruebas frontend y
+42 pruebas SQL de Calendar**; build y lint de los archivos frontend afectados.
+Incluye 5 regresiones API y 11 SQL nuevas. Las pruebas SQL se ejecutan en
 PostgreSQL desechable con rollback; no son acciones hechas por el usuario real
 ni verificaciones interactivas en su celular.
 
