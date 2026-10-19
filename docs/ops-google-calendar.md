@@ -263,7 +263,7 @@ a las 18:22 de Lima y sincronizaciones posteriores hasta el 18/10 a las 18:21.
 Los seis calendarios vuelven a indicar autorización vencida/revocada; el worker
 sigue activo. El cierre de «Cdm Automation Calendar» del 19/10 a las 11:14 permanece
 completado y pendiente de publicación. El intervalo coincide con la expiración
-semanal de Testing, aunque se debe comprobar el estado real en Google Cloud.
+semanal de Testing. El usuario confirmó el 19/10 que la app sigue en **Testing**.
 `ops_calendar_connections.updated_at` no se actualiza al reconectar en la versión
 actual: no usar esa columna para concluir que nunca se renovó la autorización.
 
