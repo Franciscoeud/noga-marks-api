@@ -258,6 +258,22 @@ específico y su aviso en Configuración se desplegaron y verificaron en producc
 días desde la autorización apunta a Testing, pero el estado de la app en Google
 Cloud requiere verificación independiente.
 
+Recurrencia verificada el 19/10/2026: hubo un retorno OAuth consumido el 11/10
+a las 18:22 de Lima y sincronizaciones posteriores hasta el 18/10 a las 18:21.
+Los seis calendarios vuelven a indicar autorización vencida/revocada; el worker
+sigue activo. El cierre de «Cdm Automation Calendar» del 19/10 a las 11:14 permanece
+completado y pendiente de publicación. El intervalo coincide con la expiración
+semanal de Testing, aunque se debe comprobar el estado real en Google Cloud.
+`ops_calendar_connections.updated_at` no se actualiza al reconectar en la versión
+actual: no usar esa columna para concluir que nunca se renovó la autorización.
+
+La recuperación de pantalla del 19/10 muestra los errores activos encima de los
+filtros y un acceso a Configuración para administradores. Si falla una lectura
+de permisos tras haber validado al administrador, **Reintentar y abrir Configuración**
+realiza una consulta nueva antes de abrirla. Nunca mantiene la agenda ni acciones
+visibles con permisos sin validar. La intención se limita a usuario y empresa.
+Validación de esta mejora: 152 pruebas frontend, build y lint aprobados.
+
 Si los calendarios de una misma conexión dejan de sincronizar al mismo tiempo,
 comparar `last_synced_at` con `updated_at`: las actualizaciones periódicas de
 `updated_at` con un error indican que el worker sigue ejecutándose. Un cierre
@@ -280,8 +296,12 @@ pendientes pasan a `publish_pending = false` y que Google muestra una sola `✔`
 
 Si la app OAuth externa sigue en estado **Testing**, Google emite refresh tokens
 de siete días para los scopes de Calendar. Revisar Google Auth Platform →
-Audience y el estado de publicación/verificación de la app; después de corregir
-el estado, reconectar para obtener una autorización nueva. No se puede recuperar
+Audience y el estado de publicación/verificación de la app. Para retirar la
+caducidad semanal, preparar la app **In production / En producción** y completar
+la verificación que Google solicite para su audiencia y scopes. Después de corregir
+el estado, reconectar la misma cuenta para obtener una autorización nueva: un
+token emitido antes no se convierte en una autorización nueva al cambiar el estado.
+No se puede recuperar
 un refresh token revocado simplemente reintentando. Véase
 [expiración oficial de tokens OAuth](https://developers.google.com/identity/protocols/oauth2#expiration).
 
